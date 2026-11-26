@@ -1,0 +1,2 @@
+set ssh pka-dsa key {KEY}
+save

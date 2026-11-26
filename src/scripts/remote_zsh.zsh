@@ -1,0 +1,1 @@
+cd && umask 077 && IFS= read -r t && case "$t" in "~/"*) t="$HOME/${t#~/}";; "~") t="$HOME";; esac && d="${t:h}" && [ "$d" = "$t" ] && d="." ; mkdir -p -- "$d" && if [ -s "$t" ] && [ -n "$(tail -c 1 "$t")" ]; then echo >> "$t"; fi && cat >> "$t"
