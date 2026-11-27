@@ -2,6 +2,8 @@
 
 A cross-platform Zig implementation of [`ssh-copy-id(1)`](https://man7.org/linux/man-pages/man1/ssh-copy-id.1.html) that uses the system `ssh`, `ssh-add`, and `sftp` commands and embeds remote-side installation scripts for multiple target shells and operating systems.
 
+Visit [https://dasimmet.github.io/ssh-copy-id/](https://dasimmet.github.io/ssh-copy-id/) for setup instructions.
+
 ## Features
 
 - **Cross-platform native binary**: Built with Zig (`0.17.1+`) using `std.process` and `std.Io`; works across Windows, Linux, macOS, FreeBSD, OpenBSD, NetBSD, and other Zig-supported targets without running shell scripts locally.
