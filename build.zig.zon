@@ -1,6 +1,6 @@
 .{
     .name = .ssh_copy_id,
-    .version = "0.0.1",
+    .version = "0.1.0",
     .minimum_zig_version = "0.17.1",
     .paths = .{""},
     .fingerprint = 0x4f9d815f70a7283d,
