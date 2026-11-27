@@ -79,12 +79,18 @@ function Test-IsIgnoredPathEntry {
     param([string]$Dir)
     if (-not $Dir -or -not [System.IO.Path]::IsPathRooted($Dir)) { return $true }
     $norm = $Dir.Trim().TrimEnd("\")
-    if ($norm -like "*\Microsoft\WindowsApps") { return $true }
-    if ($norm -like "*\Windows\System32*" -or $norm -like "*\Windows\SysWOW64*" -or $norm -like "*\Windows") { return $true }
+    if ($env:SystemRoot) {
+        $sysRoot = $env:SystemRoot.TrimEnd("\")
+        if ($norm.Equals($sysRoot, [StringComparison]::OrdinalIgnoreCase) -or
+            $norm.StartsWith($sysRoot + "\", [StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
     if ($norm -like "*\node_modules\*") { return $true }
     if ($env:TEMP -and $norm.StartsWith($env:TEMP.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase)) { return $true }
     if ($env:TMP -and $norm.StartsWith($env:TMP.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase)) { return $true }
     if ($env:VIRTUAL_ENV -and $norm.StartsWith($env:VIRTUAL_ENV.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ($env:CONDA_PREFIX -and $norm.StartsWith($env:CONDA_PREFIX.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase)) { return $true }
     return $false
 }
 
@@ -112,22 +118,50 @@ function Find-ExistingPathDir {
     $entries = ($env:Path -split ";") | ForEach-Object { $_.Trim().TrimEnd("\") } | Where-Object { $_ -ne "" }
 
     if ($TargetScope -eq "User" -or $TargetScope -eq "Auto") {
+        $commonUserDirs = @()
+        if ($env:LOCALAPPDATA) {
+            $commonUserDirs += (Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps")
+            $commonUserDirs += (Join-Path $env:LOCALAPPDATA "Programs\bin")
+        }
+        $userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+        if ($userHome) {
+            $commonUserDirs += (Join-Path $userHome ".local\bin")
+            $commonUserDirs += (Join-Path $userHome "bin")
+            $commonUserDirs += (Join-Path $userHome "scoop\shims")
+        }
+
+        foreach ($preferred in $commonUserDirs) {
+            $prefNorm = $preferred.TrimEnd("\")
+            $inPath = $false
+            foreach ($entry in $entries) {
+                if ($entry.Equals($prefNorm, [StringComparison]::OrdinalIgnoreCase)) {
+                    $inPath = $true
+                    break
+                }
+            }
+            if (-not $inPath) { continue }
+            if (Test-DirWritable $prefNorm) { return $prefNorm }
+            if (-not (Test-Path -LiteralPath $prefNorm) -and $userHome -and
+                $prefNorm.StartsWith($userHome.TrimEnd("\") + "\", [StringComparison]::OrdinalIgnoreCase) -and
+                -not $prefNorm.EndsWith("scoop\shims", [StringComparison]::OrdinalIgnoreCase)) {
+                try {
+                    New-Item -ItemType Directory -Force -Path $prefNorm | Out-Null
+                    if (Test-DirWritable $prefNorm) { return $prefNorm }
+                } catch {}
+            }
+        }
+
         foreach ($entry in $entries) {
             if (Test-IsIgnoredPathEntry $entry) { continue }
             if (-not (Test-IsUserOwnedPath $entry)) { continue }
             if (Test-DirWritable $entry) { return $entry }
-            if (-not (Test-Path -LiteralPath $entry)) {
-                try {
-                    New-Item -ItemType Directory -Force -Path $entry | Out-Null
-                    if (Test-DirWritable $entry) { return $entry }
-                } catch {}
-            }
         }
     }
 
     if ($TargetScope -eq "Machine" -or ($TargetScope -eq "Auto" -and $IsAdmin)) {
         foreach ($entry in $entries) {
             if (Test-IsIgnoredPathEntry $entry) { continue }
+            if ($TargetScope -eq "Machine" -and (Test-IsUserOwnedPath $entry)) { continue }
             if (Test-DirWritable $entry) { return $entry }
         }
     }

@@ -122,7 +122,7 @@
             <tr>
               <td>Windows</td>
               <td>Default / <code>-Scope User</code></td>
-              <td>First writable user directory in <code>$env:Path</code>, else <code>%LOCALAPPDATA%\Programs\ssh-copy-id\bin</code></td>
+              <td>Favors common directories in <code>$env:Path</code> (such as <code>%LOCALAPPDATA%\Microsoft\WindowsApps</code>, <code>~/.local/bin</code>, <code>~/bin</code>), then other writable user <code>PATH</code> dirs, else <code>%LOCALAPPDATA%\Programs\ssh-copy-id\bin</code></td>
               <td>None unless <code>-ModifyPath</code> is passed</td>
             </tr>
             <tr>
