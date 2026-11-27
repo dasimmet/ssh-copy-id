@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const sci = @import("ssh_copy_id");
+const build_options = @import("build_options");
 
 const KeyDiscovery = struct {
     keys: [][]const u8,
@@ -19,6 +20,10 @@ pub fn main(init: std.process.Init) !u8 {
     const opts = switch (parsed) {
         .help => {
             try writeStdout(io, sci.help_text);
+            return 0;
+        },
+        .version => {
+            try writeStdout(io, "ssh-copy-id " ++ build_options.version ++ "\n");
             return 0;
         },
         .err => |msg| {

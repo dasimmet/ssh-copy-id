@@ -21,7 +21,8 @@ pub const help_text =
     "  -F ssh_config        Pass configuration file to ssh/sftp\n" ++
     "  -o ssh_option        Pass option to ssh/sftp (repeatable)\n" ++
     "  -p port              Connect to specified port on the remote host\n" ++
-    "  -h, -?               Print this help summary\n" ++
+    "  -h, -?, --help       Print this help summary\n" ++
+    "  --version            Print version information\n" ++
     "  --remote-shell <s>   Force remote shell (auto, sh, bash, zsh, fish, powershell, pwsh, cmd, netscreen)\n";
 
 pub const RemoteShell = enum {
@@ -90,6 +91,7 @@ pub const CliOptions = struct {
 
 pub const ParseOutcome = union(enum) {
     help: void,
+    version: void,
     ok: CliOptions,
     err: []const u8,
 };
@@ -132,6 +134,9 @@ pub fn parseArgs(allocator: Allocator, args: []const []const u8) Allocator.Error
         }
         if (!end_of_opts and std.mem.eql(u8, arg, "--help")) {
             return .help;
+        }
+        if (!end_of_opts and std.mem.eql(u8, arg, "--version")) {
+            return .version;
         }
         if (!end_of_opts and std.mem.eql(u8, arg, "--remote-shell")) {
             if (i + 1 >= args.len) {
@@ -681,11 +686,12 @@ test "parseArgs handles optional -i argument edge cases" {
     }
 }
 
-test "parseArgs handles -h, -?, and errors" {
+test "parseArgs handles -h, -?, --version, and errors" {
     const gpa = std.testing.allocator;
     try std.testing.expectEqual(ParseOutcome.help, try parseArgs(gpa, &.{ "ssh-copy-id", "-h" }));
     try std.testing.expectEqual(ParseOutcome.help, try parseArgs(gpa, &.{ "ssh-copy-id", "-?" }));
     try std.testing.expectEqual(ParseOutcome.help, try parseArgs(gpa, &.{ "ssh-copy-id", "--help" }));
+    try std.testing.expectEqual(ParseOutcome.version, try parseArgs(gpa, &.{ "ssh-copy-id", "--version" }));
 
     const missing = try parseArgs(gpa, &.{"ssh-copy-id"});
     switch (missing) {
