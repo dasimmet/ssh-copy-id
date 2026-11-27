@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ssh-copy-id — Cross-platform OpenSSH key installer</title>
+  <meta name="description" content="Install SSH public keys across Linux, macOS, BSD, and Windows with a single native binary built in Zig.">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="page">
+    <header class="man-header">
+      <div><strong>SSH-COPY-ID(1)</strong> &mdash; dasimmet/ssh-copy-id</div>
+      <nav class="man-nav" aria-label="Primary">
+        <a href="https://github.com/dasimmet/ssh-copy-id">Source</a>
+        <a href="https://github.com/dasimmet/ssh-copy-id/releases">Releases</a>
+        <a href="install.sh">install.sh</a>
+        <a href="install.ps1">install.ps1</a>
+        <a href="https://github.com/dasimmet/ssh-copy-id/blob/main/LICENSE">MIT License</a>
+      </nav>
+    </header>
+
+    <h1>ssh-copy-id</h1>
+    <p class="lead">
+      A cross-platform Zig implementation of <code>ssh-copy-id(1)</code> that uses your system
+      <code>ssh</code>, <code>ssh-add</code>, and <code>sftp</code> commands and embeds remote key-installation
+      scripts for POSIX <code>sh</code>, <code>zsh</code>, <code>fish</code>, PowerShell, <code>cmd.exe</code>,
+      and NetScreen.
+    </p>
+
+    <div class="meta-strip">
+      <div>Latest release: <strong id="meta-latest-release">checking...</strong></div>
+      <div>Bundled <code>main</code> build: <strong id="meta-main-build">checking...</strong></div>
+      <div>License: <strong>MIT</strong></div>
+    </div>
+
+    <section id="install" aria-labelledby="install-heading">
+      <h2 id="install-heading">Install to PATH</h2>
+      <p>
+        Both installers verify SHA-256 checksums, work with or without administrative privileges, and add the
+        installation directory to your <code>PATH</code> automatically.
+      </p>
+
+      <div class="detect-bar" role="status" aria-live="polite">
+        <strong id="detect-summary">Detecting browser platform...</strong>
+        <span class="detect-detail" id="detect-detail"></span>
+      </div>
+
+      <div class="controls-row">
+        <div class="control-group" role="group" aria-label="Build source">
+          <span class="control-label">Source:</span>
+          <button type="button" class="seg-btn" data-channel="latest" aria-pressed="true">Latest release</button>
+          <button type="button" class="seg-btn" data-channel="main" aria-pressed="false">main branch build</button>
+        </div>
+
+        <div class="control-group" role="group" aria-label="Install scope">
+          <span class="control-label">Privileges:</span>
+          <button type="button" class="seg-btn" data-scope="user" aria-pressed="true">No admin (user PATH)</button>
+          <button type="button" class="seg-btn" data-scope="system" aria-pressed="false">System-wide (admin / sudo)</button>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Platform installer">
+        <button type="button" class="tab-btn" role="tab" data-tab="unix" aria-selected="true">Linux / macOS / BSD</button>
+        <button type="button" class="tab-btn" role="tab" data-tab="powershell" aria-selected="false">Windows PowerShell</button>
+        <button type="button" class="tab-btn" role="tab" data-tab="cmd" aria-selected="false">Windows CMD</button>
+        <button type="button" class="tab-btn" role="tab" data-tab="source" aria-selected="false">Build from source</button>
+      </div>
+
+      <div class="code-panel">
+        <div class="code-row">
+          <pre><code id="install-cmd">curl -fsSL https://dasimmet.github.io/ssh-copy-id/install.sh | sh -s -- --user</code></pre>
+          <button type="button" class="copy-btn" id="copy-install-btn">Copy</button>
+        </div>
+        <div class="alt-cmd">
+          <span id="install-alt-label">Without curl (using wget):</span>
+          <code id="install-alt-cmd">wget -qO- https://dasimmet.github.io/ssh-copy-id/install.sh | sh -s -- --user</code>
+        </div>
+        <p class="code-note" id="install-note">
+          Installs to ~/.local/bin with no admin privileges and updates your shell PATH.
+        </p>
+      </div>
+    </section>
+
+    <section id="path-privileges" aria-labelledby="path-heading">
+      <h2 id="path-heading">Privileges and PATH behavior</h2>
+      <p>
+        By default, <code>install.sh</code> and <code>install.ps1</code> require no elevated privileges. If you want
+        system-wide installation instead, pass <code>--system</code> on Unix or <code>-Scope Machine</code> on Windows.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Platform</th>
+              <th>Mode</th>
+              <th>Install location</th>
+              <th>PATH update</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Linux / macOS / BSD</td>
+              <td><code>--user</code> (default if non-root)</td>
+              <td><code>~/.local/bin/ssh-copy-id</code></td>
+              <td>Appends export to <code>~/.zshrc</code>, <code>~/.bashrc</code>, <code>config.fish</code>, or <code>~/.profile</code> if missing</td>
+            </tr>
+            <tr>
+              <td>Linux / macOS / BSD</td>
+              <td><code>--system</code> (uses <code>sudo</code>/<code>doas</code> if needed)</td>
+              <td><code>/usr/local/bin/ssh-copy-id</code></td>
+              <td>Already in default system <code>PATH</code></td>
+            </tr>
+            <tr>
+              <td>Windows</td>
+              <td><code>-Scope User</code> (default if non-admin)</td>
+              <td><code>%LOCALAPPDATA%\Programs\ssh-copy-id\bin\ssh-copy-id.exe</code></td>
+              <td>Adds to User <code>PATH</code> and current PowerShell session</td>
+            </tr>
+            <tr>
+              <td>Windows</td>
+              <td><code>-Scope Machine</code> (Administrator)</td>
+              <td><code>%ProgramFiles%\ssh-copy-id\bin\ssh-copy-id.exe</code></td>
+              <td>Adds to Machine <code>PATH</code> and current PowerShell session</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top: 12px;">
+        To override the directory or skip editing shell profiles, pass <code>--dir &lt;path&gt;</code> /
+        <code>--no-path</code> to <a href="install.sh">install.sh</a> or <code>-InstallDir &lt;path&gt;</code> /
+        <code>-NoModifyPath</code> to <a href="install.ps1">install.ps1</a>.
+      </p>
+    </section>
+
+    <section id="usage" aria-labelledby="usage-heading">
+      <h2 id="usage-heading">Synopsis and options</h2>
+      <pre class="synopsis">ssh-copy-id [-h|-?|-f|-n|-s|-x] [-i [identity_file]] [-t target_path] [-F ssh_config] [[-o ssh_option] ...] [-p port] [user@]hostname</pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Flag</th>
+              <th>Behavior</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>-i [identity_file]</code></td>
+              <td>Install key(s) from <code>identity_file</code> (appends <code>.pub</code> if omitted), or newest <code>~/.ssh/id*.pub</code> when file is omitted.</td>
+            </tr>
+            <tr>
+              <td><code>-f</code></td>
+              <td>Forced mode: skip checking whether keys are already installed on the remote host.</td>
+            </tr>
+            <tr>
+              <td><code>-n</code></td>
+              <td>Dry-run: print keys that would be installed without modifying the remote host.</td>
+            </tr>
+            <tr>
+              <td><code>-s</code></td>
+              <td>SFTP mode: download, merge, and upload remote <code>authorized_keys</code> over <code>sftp</code>.</td>
+            </tr>
+            <tr>
+              <td><code>-x</code></td>
+              <td>Debug trace: print executed <code>ssh-add</code>, <code>ssh</code>, and <code>sftp</code> commands to <code>stderr</code>.</td>
+            </tr>
+            <tr>
+              <td><code>-t target_path</code></td>
+              <td>Remote authorized keys file path (default: <code>.ssh/authorized_keys</code>).</td>
+            </tr>
+            <tr>
+              <td><code>-p port</code></td>
+              <td>Remote SSH/SFTP port.</td>
+            </tr>
+            <tr>
+              <td><code>-F ssh_config</code></td>
+              <td>Pass an alternate SSH configuration file to <code>ssh</code> and <code>sftp</code>.</td>
+            </tr>
+            <tr>
+              <td><code>-o ssh_option</code></td>
+              <td>Pass an SSH option to <code>ssh</code> and <code>sftp</code> (repeatable).</td>
+            </tr>
+            <tr>
+              <td><code>--remote-shell &lt;s&gt;</code></td>
+              <td>Override remote shell detection (<code>auto</code>, <code>sh</code>, <code>bash</code>, <code>zsh</code>, <code>fish</code>, <code>powershell</code>, <code>pwsh</code>, <code>cmd</code>, <code>netscreen</code>).</td>
+            </tr>
+            <tr>
+              <td><code>--version</code></td>
+              <td>Print embedded version string (e.g. <code>ssh-copy-id 0.1.0</code>) and exit.</td>
+            </tr>
+            <tr>
+              <td><code>-h</code>, <code>-?</code>, <code>--help</code></td>
+              <td>Print option summary and exit.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Examples</h3>
+      <div class="code-panel standalone">
+        <div class="code-row">
+          <pre><code id="examples-cmd">ssh-copy-id user@example.com
+ssh-copy-id -i ~/.ssh/id_ed25519.pub -p 2222 user@example.com
+ssh-copy-id -n -i ~/.ssh/id_ed25519 user@example.com
+ssh-copy-id --remote-shell powershell admin@win-host</code></pre>
+          <button type="button" class="copy-btn" data-copy-target="examples-cmd">Copy</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="downloads" aria-labelledby="downloads-heading">
+      <h2 id="downloads-heading">Binary archives</h2>
+      <p>
+        Every tagged release publishes prebuilt binaries and <code>checksums.txt</code> on
+        <a href="https://github.com/dasimmet/ssh-copy-id/releases">GitHub Releases</a>. The latest
+        <code>main</code> branch build is also bundled directly with this site under
+        <a href="builds/main/checksums.txt">builds/main/checksums.txt</a>.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Target</th>
+              <th>Platform</th>
+              <th>Latest release</th>
+              <th>Bundled <code>main</code> build</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>x86_64-linux-musl</code></td>
+              <td>Linux x86_64 (static)</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-x86_64-linux-musl.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-x86_64-linux-musl.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>x86_64-linux-gnu</code></td>
+              <td>Linux x86_64 (glibc)</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-x86_64-linux-gnu.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-x86_64-linux-gnu.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>aarch64-linux-musl</code></td>
+              <td>Linux ARM64 (static)</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-aarch64-linux-musl.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-aarch64-linux-musl.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>aarch64-linux-gnu</code></td>
+              <td>Linux ARM64 (glibc)</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-aarch64-linux-gnu.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-aarch64-linux-gnu.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>arm-linux-musleabihf</code></td>
+              <td>Linux ARMv7 hard-float (static)</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-arm-linux-musleabihf.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-arm-linux-musleabihf.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>arm-linux-gnueabihf</code></td>
+              <td>Linux ARMv7 hard-float (glibc)</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-arm-linux-gnueabihf.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-arm-linux-gnueabihf.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>riscv64-linux-musl</code></td>
+              <td>Linux RISC-V 64 (static)</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-riscv64-linux-musl.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-riscv64-linux-musl.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>riscv64-linux-gnu</code></td>
+              <td>Linux RISC-V 64 (glibc)</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-riscv64-linux-gnu.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-riscv64-linux-gnu.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>loongarch64-linux-musl</code></td>
+              <td>Linux LoongArch64 (static)</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-loongarch64-linux-musl.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-loongarch64-linux-musl.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>loongarch64-linux-gnu</code></td>
+              <td>Linux LoongArch64 (glibc)</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-loongarch64-linux-gnu.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-loongarch64-linux-gnu.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>x86-linux-musl</code></td>
+              <td>Linux x86 32-bit (static)</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-x86-linux-musl.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-x86-linux-musl.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>aarch64-macos</code></td>
+              <td>macOS Apple Silicon</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-aarch64-macos.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-aarch64-macos.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>x86_64-macos</code></td>
+              <td>macOS Intel</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-x86_64-macos.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-x86_64-macos.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>x86_64-windows</code></td>
+              <td>Windows x86_64</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-x86_64-windows.zip">.zip</a></td>
+              <td><a href="builds/main/ssh-copy-id-x86_64-windows.zip">.zip</a></td>
+            </tr>
+            <tr>
+              <td><code>aarch64-windows</code></td>
+              <td>Windows ARM64</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-aarch64-windows.zip">.zip</a></td>
+              <td><a href="builds/main/ssh-copy-id-aarch64-windows.zip">.zip</a></td>
+            </tr>
+            <tr>
+              <td><code>x86-windows</code></td>
+              <td>Windows x86 32-bit</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-x86-windows.zip">.zip</a></td>
+              <td><a href="builds/main/ssh-copy-id-x86-windows.zip">.zip</a></td>
+            </tr>
+            <tr>
+              <td><code>x86_64-freebsd</code></td>
+              <td>FreeBSD amd64</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-x86_64-freebsd.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-x86_64-freebsd.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>aarch64-freebsd</code></td>
+              <td>FreeBSD arm64</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-aarch64-freebsd.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-aarch64-freebsd.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>x86_64-openbsd</code></td>
+              <td>OpenBSD amd64</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-x86_64-openbsd.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-x86_64-openbsd.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>aarch64-openbsd</code></td>
+              <td>OpenBSD arm64</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-aarch64-openbsd.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-aarch64-openbsd.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>x86_64-netbsd</code></td>
+              <td>NetBSD amd64</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-x86_64-netbsd.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-x86_64-netbsd.tar.gz">.tar.gz</a></td>
+            </tr>
+            <tr>
+              <td><code>aarch64-netbsd</code></td>
+              <td>NetBSD arm64</td>
+              <td><a href="https://github.com/dasimmet/ssh-copy-id/releases/latest/download/ssh-copy-id-aarch64-netbsd.tar.gz">.tar.gz</a></td>
+              <td><a href="builds/main/ssh-copy-id-aarch64-netbsd.tar.gz">.tar.gz</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>Released under the <a href="https://github.com/dasimmet/ssh-copy-id/blob/main/LICENSE">MIT License</a>.</span>
+      <span><a href="https://github.com/dasimmet/ssh-copy-id">github.com/dasimmet/ssh-copy-id</a></span>
+    </footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,182 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+
+      - name: Run unit tests
+        run: zig build test
+
+      - name: Smoke test CLI
+        run: |
+          zig build run -- --version
+          zig build run -- --help
+
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-linux-musl, ext: tar.gz, bin: ssh-copy-id }
+          - { target: x86_64-linux-gnu, ext: tar.gz, bin: ssh-copy-id }
+          - { target: aarch64-linux-musl, ext: tar.gz, bin: ssh-copy-id }
+          - { target: aarch64-linux-gnu, ext: tar.gz, bin: ssh-copy-id }
+          - { target: arm-linux-musleabihf, ext: tar.gz, bin: ssh-copy-id }
+          - { target: arm-linux-gnueabihf, ext: tar.gz, bin: ssh-copy-id }
+          - { target: riscv64-linux-musl, ext: tar.gz, bin: ssh-copy-id }
+          - { target: riscv64-linux-gnu, ext: tar.gz, bin: ssh-copy-id }
+          - { target: loongarch64-linux-musl, ext: tar.gz, bin: ssh-copy-id }
+          - { target: loongarch64-linux-gnu, ext: tar.gz, bin: ssh-copy-id }
+          - { target: x86-linux-musl, ext: tar.gz, bin: ssh-copy-id }
+          - { target: x86_64-macos, ext: tar.gz, bin: ssh-copy-id }
+          - { target: aarch64-macos, ext: tar.gz, bin: ssh-copy-id }
+          - { target: x86_64-windows, ext: zip, bin: ssh-copy-id.exe }
+          - { target: aarch64-windows, ext: zip, bin: ssh-copy-id.exe }
+          - { target: x86-windows, ext: zip, bin: ssh-copy-id.exe }
+          - { target: x86_64-freebsd, ext: tar.gz, bin: ssh-copy-id }
+          - { target: aarch64-freebsd, ext: tar.gz, bin: ssh-copy-id }
+          - { target: x86_64-openbsd, ext: tar.gz, bin: ssh-copy-id }
+          - { target: aarch64-openbsd, ext: tar.gz, bin: ssh-copy-id }
+          - { target: x86_64-netbsd, ext: tar.gz, bin: ssh-copy-id }
+          - { target: aarch64-netbsd, ext: tar.gz, bin: ssh-copy-id }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+
+      - name: Build target binary
+        run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe --prefix "stage/${{ matrix.target }}"
+
+      - name: Package archive
+        shell: bash
+        run: |
+          mkdir -p "pkg/${{ matrix.target }}" dist
+          cp "stage/${{ matrix.target }}/bin/${{ matrix.bin }}" "pkg/${{ matrix.target }}/${{ matrix.bin }}"
+          cp LICENSE README.md "pkg/${{ matrix.target }}/"
+          if [ "${{ matrix.ext }}" = "zip" ]; then
+            (cd "pkg/${{ matrix.target }}" && zip -q "../../dist/ssh-copy-id-${{ matrix.target }}.zip" "${{ matrix.bin }}" LICENSE README.md)
+          else
+            tar -C "pkg/${{ matrix.target }}" -czf "dist/ssh-copy-id-${{ matrix.target }}.tar.gz" "${{ matrix.bin }}" LICENSE README.md
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/ssh-copy-id-${{ matrix.target }}.${{ matrix.ext }}
+          retention-days: 7
+
+  release:
+    name: Release
+    needs: [test, build]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd dist
+          sha256sum ssh-copy-id-* | sort -k2 > checksums.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+  pages:
+    name: Deploy GitHub Pages
+    needs: [test, build]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download main branch builds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: docs/builds/main
+          merge-multiple: true
+
+      - name: Generate checksums and manifest
+        shell: bash
+        run: |
+          cd docs/builds/main
+          sha256sum ssh-copy-id-* | sort -k2 > checksums.txt
+          tar -xzOf ssh-copy-id-x86_64-linux-musl.tar.gz ssh-copy-id > /tmp/ssh-copy-id-ver
+          chmod +x /tmp/ssh-copy-id-ver
+          VERSION=$(/tmp/ssh-copy-id-ver --version | awk '{print $2}')
+          COMMIT="${GITHUB_SHA}"
+          BUILT_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          python3 - <<PY
+          import glob, json
+          archives = sorted(glob.glob("ssh-copy-id-*"))
+          with open("manifest.json", "w", encoding="utf-8") as f:
+              json.dump({
+                  "version": "${VERSION}",
+                  "commit": "${COMMIT}",
+                  "built_at": "${BUILT_AT}",
+                  "archives": archives,
+              }, f, indent=2)
+              f.write("\n")
+          PY
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

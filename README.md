@@ -16,6 +16,7 @@ A cross-platform Zig implementation of [`ssh-copy-id(1)`](https://man7.org/linux
   - `-F ssh_config` — Pass SSH configuration file through to `ssh`/`sftp`.
   - `-o ssh_option` — Pass SSH option through to `ssh`/`sftp` (repeatable).
   - `-h`, `-?`, `--help` — Print usage and option summary.
+  - `--version` — Print embedded version string.
   - `--remote-shell <shell>` — Override remote target detection (`auto`, `sh`, `bash`, `zsh`, `fish`, `powershell`, `pwsh`, `cmd`, `netscreen`).
 - **Compiled-in embedded remote scripts** (`@embedFile`):
   - [remote_posix.sh](src/scripts/remote_posix.sh) — POSIX `sh` script (`sh`, `dash`, `ash`, `bash`, `ksh`, plus `zsh`/`fish`/`csh` via `exec sh -c`), handles `~/` expansion, `umask 077`, trailing newline normalization, and SELinux `restorecon`.
@@ -25,6 +26,20 @@ A cross-platform Zig implementation of [`ssh-copy-id(1)`](https://man7.org/linux
   - [remote_cmd.cmd](src/scripts/remote_cmd.cmd) — Windows `cmd.exe` fallback template.
   - [remote_netscreen.txt](src/scripts/remote_netscreen.txt) — NetScreen ScreenOS (`set ssh pka-dsa key ...` / `save`) command template.
 
+## Installation
+
+Installers and platform-specific instructions are available on the [project site](https://dasimmet.github.io/ssh-copy-id/) (they download the latest release or fall back to the latest `main` build bundled with the site, and work with or without administrative privileges):
+
+```sh
+# Linux, macOS, and BSD (installs to ~/.local/bin by default when non-root)
+curl -fsSL https://dasimmet.github.io/ssh-copy-id/install.sh | sh
+```
+
+```powershell
+# Windows PowerShell (installs to %LOCALAPPDATA%\Programs\ssh-copy-id\bin by default when non-admin)
+irm https://dasimmet.github.io/ssh-copy-id/install.ps1 | iex
+```
+
 ## Building
 
 Requires Zig `0.17.1` (matching `build.zig.zon`):
@@ -33,7 +48,7 @@ Requires Zig `0.17.1` (matching `build.zig.zon`):
 zig build
 ```
 
-The binary is installed to `zig-out/bin/ssh-copy-id` (`zig-out/bin/ssh-copy-id.exe` on Windows).
+The binary is installed to `zig-out/bin/ssh-copy-id` (`zig-out/bin/ssh-copy-id.exe` on Windows). Pass `-Dversion-string=<version>` to override the embedded Git version string.
 
 ### Cross-compiling
 
@@ -76,3 +91,7 @@ Run the unit test suite:
 ```sh
 zig build test
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
