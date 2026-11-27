@@ -38,8 +38,9 @@
     <section id="install" aria-labelledby="install-heading">
       <h2 id="install-heading">Install to PATH</h2>
       <p>
-        Both installers verify SHA-256 checksums, work with or without administrative privileges, and add the
-        installation directory to your <code>PATH</code> automatically.
+        Both installers verify SHA-256 checksums, work with or without administrative privileges, and look for an
+        existing writable directory on your <code>PATH</code> without modifying shell configs or Windows
+        <code>PATH</code> unless you pass <code>--modify-path</code> / <code>-ModifyPath</code>.
       </p>
 
       <div class="detect-bar" role="status" aria-live="polite">
@@ -59,6 +60,11 @@
           <button type="button" class="seg-btn" data-scope="user" aria-pressed="true">No admin (user PATH)</button>
           <button type="button" class="seg-btn" data-scope="system" aria-pressed="false">System-wide (admin / sudo)</button>
         </div>
+
+        <label class="control-group" style="cursor: pointer;">
+          <input type="checkbox" id="opt-modify-path">
+          <span>Modify <code>PATH</code> if needed</span>
+        </label>
       </div>
 
       <div class="tabs" role="tablist" aria-label="Platform installer">
@@ -70,15 +76,15 @@
 
       <div class="code-panel">
         <div class="code-row">
-          <pre><code id="install-cmd">curl -fsSL https://dasimmet.github.io/ssh-copy-id/install.sh | sh -s -- --user</code></pre>
+          <pre><code id="install-cmd">curl -fsSL https://dasimmet.github.io/ssh-copy-id/install.sh | sh</code></pre>
           <button type="button" class="copy-btn" id="copy-install-btn">Copy</button>
         </div>
         <div class="alt-cmd">
           <span id="install-alt-label">Without curl (using wget):</span>
-          <code id="install-alt-cmd">wget -qO- https://dasimmet.github.io/ssh-copy-id/install.sh | sh -s -- --user</code>
+          <code id="install-alt-cmd">wget -qO- https://dasimmet.github.io/ssh-copy-id/install.sh | sh</code>
         </div>
         <p class="code-note" id="install-note">
-          Installs to ~/.local/bin with no admin privileges and updates your shell PATH.
+          Searches PATH for an existing writable directory without modifying shell configs.
         </p>
       </div>
     </section>
@@ -86,8 +92,9 @@
     <section id="path-privileges" aria-labelledby="path-heading">
       <h2 id="path-heading">Privileges and PATH behavior</h2>
       <p>
-        By default, <code>install.sh</code> and <code>install.ps1</code> require no elevated privileges. If you want
-        system-wide installation instead, pass <code>--system</code> on Unix or <code>-Scope Machine</code> on Windows.
+        By default, <code>install.sh</code> and <code>install.ps1</code> require no elevated privileges and never
+        alter your shell profile or Windows environment variables. They scan <code>PATH</code> for an existing
+        writable directory first, falling back to a standard user directory only if none is present.
       </p>
       <div class="table-wrap">
         <table>
@@ -95,42 +102,42 @@
             <tr>
               <th>Platform</th>
               <th>Mode</th>
-              <th>Install location</th>
-              <th>PATH update</th>
+              <th>Directory selection</th>
+              <th>PATH modification</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td>Linux / macOS / BSD</td>
-              <td><code>--user</code> (default if non-root)</td>
-              <td><code>~/.local/bin/ssh-copy-id</code></td>
-              <td>Appends export to <code>~/.zshrc</code>, <code>~/.bashrc</code>, <code>config.fish</code>, or <code>~/.profile</code> if missing</td>
+              <td>Default / <code>--user</code></td>
+              <td>First writable directory in <code>$PATH</code> (e.g. <code>~/.local/bin</code>, <code>~/bin</code>, <code>/opt/homebrew/bin</code>), else <code>~/.local/bin</code></td>
+              <td>None unless <code>--modify-path</code> is passed</td>
             </tr>
             <tr>
               <td>Linux / macOS / BSD</td>
               <td><code>--system</code> (uses <code>sudo</code>/<code>doas</code> if needed)</td>
               <td><code>/usr/local/bin/ssh-copy-id</code></td>
-              <td>Already in default system <code>PATH</code></td>
+              <td>Already in system <code>PATH</code></td>
             </tr>
             <tr>
               <td>Windows</td>
-              <td><code>-Scope User</code> (default if non-admin)</td>
-              <td><code>%LOCALAPPDATA%\Programs\ssh-copy-id\bin\ssh-copy-id.exe</code></td>
-              <td>Adds to User <code>PATH</code> and current PowerShell session</td>
+              <td>Default / <code>-Scope User</code></td>
+              <td>First writable user directory in <code>$env:Path</code>, else <code>%LOCALAPPDATA%\Programs\ssh-copy-id\bin</code></td>
+              <td>None unless <code>-ModifyPath</code> is passed</td>
             </tr>
             <tr>
               <td>Windows</td>
               <td><code>-Scope Machine</code> (Administrator)</td>
-              <td><code>%ProgramFiles%\ssh-copy-id\bin\ssh-copy-id.exe</code></td>
-              <td>Adds to Machine <code>PATH</code> and current PowerShell session</td>
+              <td>First writable directory in <code>$env:Path</code>, else <code>%ProgramFiles%\ssh-copy-id\bin</code></td>
+              <td>None unless <code>-ModifyPath</code> is passed</td>
             </tr>
           </tbody>
         </table>
       </div>
       <p style="margin-top: 12px;">
-        To override the directory or skip editing shell profiles, pass <code>--dir &lt;path&gt;</code> /
-        <code>--no-path</code> to <a href="install.sh">install.sh</a> or <code>-InstallDir &lt;path&gt;</code> /
-        <code>-NoModifyPath</code> to <a href="install.ps1">install.ps1</a>.
+        To override the directory or opt into updating <code>PATH</code>, pass <code>--dir &lt;path&gt;</code> or
+        <code>--modify-path</code> to <a href="install.sh">install.sh</a>, or <code>-InstallDir &lt;path&gt;</code> /
+        <code>-ModifyPath</code> to <a href="install.ps1">install.ps1</a>.
       </p>
     </section>
 

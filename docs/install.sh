@@ -7,7 +7,7 @@ VERSION="${SSH_COPY_ID_VERSION:-latest}"
 INSTALL_DIR="${SSH_COPY_ID_INSTALL_DIR:-}"
 SCOPE="${SSH_COPY_ID_SCOPE:-auto}"
 LIBC="${SSH_COPY_ID_LIBC:-musl}"
-NO_MODIFY_PATH="${SSH_COPY_ID_NO_MODIFY_PATH:-0}"
+MODIFY_PATH=0
 
 usage() {
     cat <<EOF
@@ -17,18 +17,21 @@ Usage:
   curl -fsSL https://dasimmet.github.io/ssh-copy-id/install.sh | sh
   sh install.sh [OPTIONS]
 
+By default, installs into an existing writable directory already in PATH and
+never edits shell profile files unless --modify-path is explicitly passed.
+
 Options:
   --version <tag>   Release tag, 'latest' (default; falls back to main build), or 'main'
   --dir <path>      Override installation directory
-  --user            Install for current user only (~/.local/bin, no admin needed)
+  --user            Prefer user-writable directories (~/.local/bin fallback, no admin)
   --system          Install system-wide (/usr/local/bin, uses sudo/doas if needed)
   --libc <type>     Linux libc variant: musl (default, static) or gnu
-  --no-path         Do not edit shell profile files to add install dir to PATH
+  --modify-path     Edit shell profile files if install dir is not in PATH
   -h, --help        Show this help message
 
 Environment overrides:
   SSH_COPY_ID_VERSION, SSH_COPY_ID_INSTALL_DIR, SSH_COPY_ID_SCOPE,
-  SSH_COPY_ID_LIBC, SSH_COPY_ID_NO_MODIFY_PATH, SSH_COPY_ID_PAGES_URL
+  SSH_COPY_ID_LIBC, SSH_COPY_ID_PAGES_URL
 EOF
 }
 
@@ -66,8 +69,8 @@ while [ "$#" -gt 0 ]; do
             LIBC="$2"
             shift 2
             ;;
-        --no-path)
-            NO_MODIFY_PATH="1"
+        --modify-path)
+            MODIFY_PATH=1
             shift
             ;;
         -h|--help)
@@ -179,22 +182,135 @@ sha256_of() {
     fi
 }
 
+is_ignored_path_entry() {
+    entry="$1"
+    case "$entry" in
+        ""|.|..|/tmp|/tmp/*|/var/tmp|/var/tmp/*|*node_modules*) return 0 ;;
+        /*) ;;
+        *) return 0 ;;
+    esac
+    if [ -n "${VIRTUAL_ENV:-}" ]; then
+        case "$entry" in
+            "$VIRTUAL_ENV"|"$VIRTUAL_ENV"/*) return 0 ;;
+        esac
+    fi
+    if [ -n "${CONDA_PREFIX:-}" ]; then
+        case "$entry" in
+            "$CONDA_PREFIX"|"$CONDA_PREFIX"/*) return 0 ;;
+        esac
+    fi
+    return 1
+}
+
+path_contains_dir() {
+    target_dir="${1%/}"
+    old_ifs=$IFS
+    IFS=:
+    for entry in $PATH; do
+        entry="${entry%/}"
+        if [ "$entry" = "$target_dir" ]; then
+            IFS=$old_ifs
+            return 0
+        fi
+    done
+    IFS=$old_ifs
+    return 1
+}
+
+find_existing_path_dir() {
+    mode="$1"
+    home_dir="${HOME:-}"
+    xdg_bin="${XDG_BIN_HOME:-}"
+
+    # Prefer standard user bin directories if already listed in PATH
+    for candidate in "$xdg_bin" "${home_dir:+$home_dir/.local/bin}" "${home_dir:+$home_dir/bin}"; do
+        [ -n "$candidate" ] || continue
+        candidate="${candidate%/}"
+        if path_contains_dir "$candidate"; then
+            if [ -d "$candidate" ] && [ -w "$candidate" ]; then
+                printf '%s\n' "$candidate"
+                return 0
+            fi
+            if [ ! -e "$candidate" ] && [ -n "$home_dir" ] && [ -w "$home_dir" ]; then
+                case "$candidate" in
+                    "$home_dir"/*)
+                        printf '%s\n' "$candidate"
+                        return 0
+                        ;;
+                esac
+            fi
+        fi
+    done
+
+    # Scan PATH for any existing writable directory under $HOME first
+    old_ifs=$IFS
+    IFS=:
+    if [ -n "$home_dir" ]; then
+        for entry in $PATH; do
+            entry="${entry%/}"
+            is_ignored_path_entry "$entry" && continue
+            case "$entry" in
+                "$home_dir"/*)
+                    if [ -d "$entry" ] && [ -w "$entry" ]; then
+                        IFS=$old_ifs
+                        printf '%s\n' "$entry"
+                        return 0
+                    fi
+                    ;;
+            esac
+        done
+    fi
+
+    # In auto mode, also check non-HOME writable directories already in PATH (e.g. /opt/homebrew/bin, /usr/local/bin)
+    if [ "$mode" = "auto" ]; then
+        for entry in $PATH; do
+            entry="${entry%/}"
+            is_ignored_path_entry "$entry" && continue
+            if [ -d "$entry" ] && [ -w "$entry" ]; then
+                IFS=$old_ifs
+                printf '%s\n' "$entry"
+                return 0
+            fi
+        done
+    fi
+    IFS=$old_ifs
+    return 1
+}
+
 resolve_install_dir() {
     if [ -n "$INSTALL_DIR" ]; then
-        printf '%s\n' "$INSTALL_DIR"
+        printf '%s\n' "${INSTALL_DIR%/}"
         return
     fi
     uid=$(id -u)
     case "$SCOPE" in
         system)
-            printf '%s\n' "/usr/local/bin"
+            if path_contains_dir "/usr/local/bin"; then
+                printf '%s\n' "/usr/local/bin"
+            elif path_contains_dir "/usr/bin"; then
+                printf '%s\n' "/usr/bin"
+            else
+                printf '%s\n' "/usr/local/bin"
+            fi
             ;;
         user)
-            printf '%s\n' "${XDG_BIN_HOME:-$HOME/.local/bin}"
+            if found=$(find_existing_path_dir "user"); then
+                printf '%s\n' "$found"
+            else
+                printf '%s\n' "${XDG_BIN_HOME:-$HOME/.local/bin}"
+            fi
             ;;
         auto)
-            if [ "$uid" = "0" ] || { [ -d /usr/local/bin ] && [ -w /usr/local/bin ]; }; then
-                printf '%s\n' "/usr/local/bin"
+            if [ "$uid" = "0" ]; then
+                if path_contains_dir "/usr/local/bin"; then
+                    printf '%s\n' "/usr/local/bin"
+                elif found=$(find_existing_path_dir "auto"); then
+                    printf '%s\n' "$found"
+                else
+                    printf '%s\n' "/usr/local/bin"
+                fi
+            elif found=$(find_existing_path_dir "auto"); then
+                printf '%s\n' "$found"
             else
                 printf '%s\n' "${XDG_BIN_HOME:-$HOME/.local/bin}"
             fi
@@ -232,16 +348,9 @@ append_line_if_missing() {
     log "Updated PATH in $rc_file"
 }
 
-ensure_in_path() {
+handle_path_status() {
     dir="$1"
-    case ":$PATH:" in
-        *":$dir:"*)
-            return 0
-            ;;
-    esac
-    if [ "$NO_MODIFY_PATH" = "1" ]; then
-        log "Note: '$dir' is not in PATH. Add it manually:"
-        log "  export PATH=\"$dir:\$PATH\""
+    if path_contains_dir "$dir"; then
         return 0
     fi
 
@@ -252,9 +361,21 @@ ensure_in_path() {
             ;;
     esac
     posix_line="export PATH=\"$display_dir:\$PATH\""
+    shell_name=$(basename "${SHELL:-sh}")
+
+    if [ "$MODIFY_PATH" != "1" ]; then
+        log ""
+        log "Note: '${dir}' is not in PATH (PATH was not modified)."
+        log "Add it to your shell config, or re-run with --modify-path:"
+        if [ "$shell_name" = "fish" ]; then
+            log "  fish_add_path -g \"$dir\""
+        else
+            log "  $posix_line"
+        fi
+        return 0
+    fi
 
     updated=0
-    shell_name=$(basename "${SHELL:-sh}")
     case "$shell_name" in
         zsh)
             append_line_if_missing "$HOME/.zshrc" "$posix_line"
@@ -361,4 +482,4 @@ fi
 
 log "Installed ssh-copy-id to ${DEST_BIN}"
 "${DEST_BIN}" --version || true
-ensure_in_path "$DEST_DIR"
+handle_path_status "$DEST_DIR"

@@ -28,19 +28,6 @@ Visit [https://dasimmet.github.io/ssh-copy-id/](https://dasimmet.github.io/ssh-c
   - [remote_cmd.cmd](src/scripts/remote_cmd.cmd) — Windows `cmd.exe` fallback template.
   - [remote_netscreen.txt](src/scripts/remote_netscreen.txt) — NetScreen ScreenOS (`set ssh pka-dsa key ...` / `save`) command template.
 
-## Installation
-
-Installers and platform-specific instructions are available on the [project site](https://dasimmet.github.io/ssh-copy-id/) (they download the latest release or fall back to the latest `main` build bundled with the site, and work with or without administrative privileges):
-
-```sh
-# Linux, macOS, and BSD (installs to ~/.local/bin by default when non-root)
-curl -fsSL https://dasimmet.github.io/ssh-copy-id/install.sh | sh
-```
-
-```powershell
-# Windows PowerShell (installs to %LOCALAPPDATA%\Programs\ssh-copy-id\bin by default when non-admin)
-irm https://dasimmet.github.io/ssh-copy-id/install.ps1 | iex
-```
 
 ## Building
 

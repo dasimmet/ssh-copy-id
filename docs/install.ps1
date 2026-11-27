@@ -5,7 +5,7 @@ param(
     [ValidateSet("Auto", "User", "Machine")]
     [string]$Scope = $(if ($env:SSH_COPY_ID_SCOPE) { $env:SSH_COPY_ID_SCOPE } else { "Auto" }),
     [string]$PagesUrl = $(if ($env:SSH_COPY_ID_PAGES_URL) { $env:SSH_COPY_ID_PAGES_URL } else { "https://dasimmet.github.io/ssh-copy-id" }),
-    [switch]$NoModifyPath = $(if ($env:SSH_COPY_ID_NO_MODIFY_PATH -eq "1") { $true } else { $false }),
+    [switch]$ModifyPath,
     [switch]$Help
 )
 
@@ -17,13 +17,15 @@ ssh-copy-id installer for Windows
 
 Usage:
   irm https://dasimmet.github.io/ssh-copy-id/install.ps1 | iex
-  & ([scriptblock]::Create((irm https://dasimmet.github.io/ssh-copy-id/install.ps1))) [-Version <tag|latest|main>] [-Scope Auto|User|Machine] [-InstallDir <dir>] [-NoModifyPath]
+  & ([scriptblock]::Create((irm https://dasimmet.github.io/ssh-copy-id/install.ps1))) [-Version <tag|latest|main>] [-Scope Auto|User|Machine] [-InstallDir <dir>] [-ModifyPath]
+
+By default, installs into an existing writable directory already in PATH and
+never modifies User or Machine PATH unless -ModifyPath is explicitly passed.
 
 Environment overrides:
   SSH_COPY_ID_VERSION         Release tag, 'latest' (default; falls back to main build), or 'main'
   SSH_COPY_ID_SCOPE           Auto, User, or Machine (default: Auto)
   SSH_COPY_ID_INSTALL_DIR     Override destination directory
-  SSH_COPY_ID_NO_MODIFY_PATH  Set to 1 to skip updating PATH
   SSH_COPY_ID_PAGES_URL       Override GitHub Pages base URL
 "@
     return
@@ -56,6 +58,92 @@ function Get-TargetTriple {
         "^(X86|I386|I686)$" { return "x86-windows" }
         default { throw "Unsupported Windows architecture: $arch" }
     }
+}
+
+function Test-DirWritable {
+    param([string]$Dir)
+    if (-not (Test-Path -LiteralPath $Dir -PathType Container)) {
+        return $false
+    }
+    $probe = Join-Path $Dir (".ssh-copy-id-write-test-" + [Guid]::NewGuid().ToString("N"))
+    try {
+        [System.IO.File]::WriteAllText($probe, "")
+        Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Test-IsIgnoredPathEntry {
+    param([string]$Dir)
+    if (-not $Dir -or -not [System.IO.Path]::IsPathRooted($Dir)) { return $true }
+    $norm = $Dir.Trim().TrimEnd("\")
+    if ($norm -like "*\Microsoft\WindowsApps") { return $true }
+    if ($norm -like "*\Windows\System32*" -or $norm -like "*\Windows\SysWOW64*" -or $norm -like "*\Windows") { return $true }
+    if ($norm -like "*\node_modules\*") { return $true }
+    if ($env:TEMP -and $norm.StartsWith($env:TEMP.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ($env:TMP -and $norm.StartsWith($env:TMP.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ($env:VIRTUAL_ENV -and $norm.StartsWith($env:VIRTUAL_ENV.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    return $false
+}
+
+function Test-IsUserOwnedPath {
+    param([string]$Dir)
+    $norm = $Dir.TrimEnd("\")
+    foreach ($root in @($env:USERPROFILE, $env:LOCALAPPDATA, $env:APPDATA, $HOME)) {
+        if ($root) {
+            $r = $root.TrimEnd("\")
+            if ($norm.Equals($r, [StringComparison]::OrdinalIgnoreCase) -or
+                $norm.StartsWith($r + "\", [StringComparison]::OrdinalIgnoreCase)) {
+                return $true
+            }
+        }
+    }
+    return $false
+}
+
+function Find-ExistingPathDir {
+    param(
+        [ValidateSet("Auto", "User", "Machine")][string]$TargetScope,
+        [bool]$IsAdmin
+    )
+
+    $entries = ($env:Path -split ";") | ForEach-Object { $_.Trim().TrimEnd("\") } | Where-Object { $_ -ne "" }
+
+    if ($TargetScope -eq "User" -or $TargetScope -eq "Auto") {
+        foreach ($entry in $entries) {
+            if (Test-IsIgnoredPathEntry $entry) { continue }
+            if (-not (Test-IsUserOwnedPath $entry)) { continue }
+            if (Test-DirWritable $entry) { return $entry }
+            if (-not (Test-Path -LiteralPath $entry)) {
+                try {
+                    New-Item -ItemType Directory -Force -Path $entry | Out-Null
+                    if (Test-DirWritable $entry) { return $entry }
+                } catch {}
+            }
+        }
+    }
+
+    if ($TargetScope -eq "Machine" -or ($TargetScope -eq "Auto" -and $IsAdmin)) {
+        foreach ($entry in $entries) {
+            if (Test-IsIgnoredPathEntry $entry) { continue }
+            if (Test-DirWritable $entry) { return $entry }
+        }
+    }
+
+    return $null
+}
+
+function Test-InCurrentPath {
+    param([string]$Dir)
+    $normalized = $Dir.TrimEnd("\")
+    foreach ($entry in ($env:Path -split ";")) {
+        if ($entry.Trim().TrimEnd("\").Equals($normalized, [StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+    return $false
 }
 
 function Add-ToPath {
@@ -91,15 +179,7 @@ function Add-ToPath {
         Write-Host "'$Dir' is already in $TargetScope PATH."
     }
 
-    $sessionEntries = ($env:Path -split ";") | Where-Object { $_.Trim() -ne "" }
-    $inSession = $false
-    foreach ($entry in $sessionEntries) {
-        if ($entry.Trim().TrimEnd("\").Equals($normalized, [StringComparison]::OrdinalIgnoreCase)) {
-            $inSession = $true
-            break
-        }
-    }
-    if (-not $inSession) {
+    if (-not (Test-InCurrentPath $Dir)) {
         $env:Path = "$Dir;$env:Path"
     }
 }
@@ -113,12 +193,15 @@ $effectiveScope = $Scope
 if ($effectiveScope -eq "Auto") {
     $effectiveScope = if ($isAdmin) { "Machine" } else { "User" }
 }
-if ($effectiveScope -eq "Machine" -and -not $isAdmin) {
+if ($Scope -eq "Machine" -and -not $isAdmin) {
     throw "System-wide installation (-Scope Machine) requires an Administrator PowerShell session. Run without -Scope Machine for a user-level install."
 }
 
 if (-not $InstallDir) {
-    if ($effectiveScope -eq "Machine") {
+    $foundInPath = Find-ExistingPathDir -TargetScope $Scope -IsAdmin $isAdmin
+    if ($foundInPath) {
+        $InstallDir = $foundInPath
+    } elseif ($effectiveScope -eq "Machine") {
         $InstallDir = Join-Path $env:ProgramFiles "ssh-copy-id\bin"
     } else {
         $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME "AppData\Local" }
@@ -195,12 +278,18 @@ try {
     $destExe = Join-Path $InstallDir "ssh-copy-id.exe"
     Copy-Item -Path $exeSrc.FullName -Destination $destExe -Force
 
-    if (-not $NoModifyPath) {
-        Add-ToPath -Dir $InstallDir -TargetScope $effectiveScope
-    }
-
     Write-Host "Installed ssh-copy-id to $destExe"
     & $destExe --version
+
+    if (-not (Test-InCurrentPath $InstallDir)) {
+        if ($ModifyPath) {
+            Add-ToPath -Dir $InstallDir -TargetScope $effectiveScope
+        } else {
+            Write-Host ""
+            Write-Host "Note: '$InstallDir' is not in PATH (PATH was not modified)."
+            Write-Host "Add it to your PATH manually, or re-run with -ModifyPath."
+        }
+    }
 } finally {
     if (Test-Path -LiteralPath $tmpRoot) {
         Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue

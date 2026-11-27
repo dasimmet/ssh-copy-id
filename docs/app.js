@@ -9,6 +9,7 @@
     suggestedTab: "unix",
     channel: "latest",
     scope: "user",
+    modifyPath: false,
     detected: {
       os: "unknown",
       osLabel: "Unknown OS",
@@ -139,25 +140,30 @@
   function getCommands() {
     var isMain = state.channel === "main";
     var isSystem = state.scope === "system";
+    var modifyPath = state.modifyPath;
 
     var shUrl = PAGES_URL + "/install.sh";
     var psUrl = PAGES_URL + "/install.ps1";
 
     var unixArgs = [];
     if (isMain) unixArgs.push("--version", "main");
-    unixArgs.push(isSystem ? "--system" : "--user");
+    if (isSystem) unixArgs.push("--system");
+    if (modifyPath) unixArgs.push("--modify-path");
 
     var unixSuffix = unixArgs.length ? " -s -- " + unixArgs.join(" ") : "";
     var unixCurl = "curl -fsSL " + shUrl + " | sh" + unixSuffix;
     var unixWget = "wget -qO- " + shUrl + " | sh" + unixSuffix;
 
-    var psScopeFlag = isSystem ? " -Scope Machine" : " -Scope User";
-    var psVersionFlag = isMain ? " -Version main" : "";
+    var psArgs = [];
+    if (isMain) psArgs.push("-Version main");
+    if (isSystem) psArgs.push("-Scope Machine");
+    if (modifyPath) psArgs.push("-ModifyPath");
+
     var psCmd;
-    if (!isMain && !isSystem) {
+    if (psArgs.length === 0) {
       psCmd = "irm " + psUrl + " | iex";
     } else {
-      psCmd = "& ([scriptblock]::Create((irm " + psUrl + ")))" + psVersionFlag + psScopeFlag;
+      psCmd = "& ([scriptblock]::Create((irm " + psUrl + "))) " + psArgs.join(" ");
     }
 
     var cmdInner = psCmd.replace(/"/g, '\\"');
@@ -169,30 +175,38 @@
       "zig build -Doptimize=ReleaseSafe\n" +
       "./zig-out/bin/ssh-copy-id --version";
 
+    var unixPathNote = modifyPath
+      ? "Will update shell profile (~/.zshrc, ~/.bashrc, config.fish, or ~/.profile) if no existing writable PATH directory is found."
+      : "Searches PATH for an existing writable directory (e.g. ~/.local/bin, ~/bin, /opt/homebrew/bin) without modifying shell configs.";
+
+    var winPathNote = modifyPath
+      ? "Will update " + (isSystem ? "Machine" : "User") + " PATH if no existing writable PATH directory is found."
+      : "Searches PATH for an existing writable user directory without modifying User or Machine PATH.";
+
     return {
       unix: {
         main: unixCurl,
         altLabel: "Without curl (using wget):",
         alt: unixWget,
-        note: isSystem
+        note: (isSystem
           ? "Installs to /usr/local/bin using sudo or doas if needed."
-          : "Installs to ~/.local/bin with no admin privileges and updates your shell PATH (~/.profile, ~/.bashrc, ~/.zshrc, or fish)."
+          : "No admin privileges required. " + unixPathNote)
       },
       powershell: {
         main: psCmd,
         altLabel: "Inspect script before running:",
         alt: "irm " + psUrl,
-        note: isSystem
-          ? "Installs to %ProgramFiles%\\ssh-copy-id\\bin and adds it to Machine PATH (requires Administrator PowerShell)."
-          : "Installs to %LOCALAPPDATA%\\Programs\\ssh-copy-id\\bin with no admin privileges and adds it to User PATH."
+        note: (isSystem
+          ? "Installs system-wide (requires Administrator PowerShell). " + winPathNote
+          : "No admin privileges required. " + winPathNote)
       },
       cmd: {
         main: cmdLine,
         altLabel: "Direct script URL:",
         alt: psUrl,
-        note: isSystem
-          ? "Invokes install.ps1 for Machine PATH (run Command Prompt as Administrator)."
-          : "Invokes install.ps1 for current User PATH without Administrator privileges."
+        note: (isSystem
+          ? "Invokes install.ps1 system-wide (run Command Prompt as Administrator). " + winPathNote
+          : "Invokes install.ps1 without Administrator privileges. " + winPathNote)
       },
       source: {
         main: sourceCmd,
@@ -350,6 +364,14 @@
         render();
       });
     });
+
+    var modifyPathCheckbox = document.getElementById("opt-modify-path");
+    if (modifyPathCheckbox) {
+      modifyPathCheckbox.addEventListener("change", function () {
+        state.modifyPath = !!modifyPathCheckbox.checked;
+        render();
+      });
+    }
 
     document.getElementById("copy-install-btn").addEventListener("click", function () {
       copyText(document.getElementById("install-cmd").textContent, this);
